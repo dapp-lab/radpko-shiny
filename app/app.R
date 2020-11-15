@@ -2,26 +2,27 @@ library(shiny)
 library(shinyWidgets)
 library(tidyverse)
 library(lubridate)
+library(sf)
 import::from('data.table', '%between%')
 
 ## load data
-radpko_m <- data.table::fread('radpko_bases_cc_m.csv') %>% 
-  as_tibble() %>% 
-  mutate(year = year(date)) %>% 
-  select(mission:date, year, everything(), -gid)
+radpko_bases_m <- readRDS('radpko_bases_m.rds')
+radpko_bases_y <- readRDS('radpko_bases_y.rds')
+radpko_adm2_m <- readRDS('radpko_adm2_m.rds')
+radpko_adm2_y <- readRDS('radpko_adm2_y.rds')
 
+ssa <- readRDS('ssa.Rds')
 
-radpko_y <- data.table::fread('radpko_bases_cc_y.csv')%>% 
-  as_tibble() 
 
 ## define lists for checkboxes
-missions <- as.list(unique(radpko_y$mission))
-names(missions) <- unique(radpko_y$mission)
-countries <- radpko_y %>%
+missions <- as.list(unique(radpko_bases_y$mission))
+names(missions) <- unique(radpko_bases_y$mission)
+contribs <- list()
+contribs$countries <- radpko_bases_y %>%
   select(albania:zambia) %>% 
   select(!matches('_')) %>%
   names()
-regions <- c('afr', 'asian', 'west')
+contribs$regions <- c('afr', 'asian', 'west')
 
 # Define UI for app that draws a histogram ----
 ui <- fluidPage(
@@ -35,6 +36,14 @@ ui <- fluidPage(
     # Sidebar panel for inputs ----
     sidebarPanel(
       
+      ## input: spatial unit
+      radioButtons(inputId = 'unit',
+                   label = 'Geographic unit:',
+                   choices = list('Base',
+                                  'ADM2'),
+                   selected = 'Base',
+                   inline = T),
+      
       ## input: timescale
       radioButtons(inputId = 'timescale',
                    label = 'Temporal unit:',
@@ -46,9 +55,9 @@ ui <- fluidPage(
       ## input: year
       sliderInput(inputId = 'year',
                   label = 'Year:',
-                  min = min(radpko_y$year),
-                  max = max(radpko_y$year),
-                  value = range(radpko_y$year),
+                  min = min(radpko_bases_y$year),
+                  max = max(radpko_bases_y$year),
+                  value = range(radpko_bases_y$year),
                   step = 1,
                   sep = ''),
       
@@ -103,9 +112,8 @@ ui <- fluidPage(
       
       # Output: Histogram ----
       plotOutput(outputId = "distPlot"),
-      textOutput('vars'),
-      textOutput('obs'),
-      tableOutput('variables')
+      plotOutput(outputId = 'coverage_plot'),
+      textOutput('vars')
       
     )
   )
@@ -117,13 +125,29 @@ server <- function(input, output) {
   ## select yearly or monthly data
   timescale <- reactive({
     
-    if (input$timescale) {
+    if (input$unit == 'Base') {
       
-      radpko_m
+      if (input$timescale) {
+        
+        radpko_bases_m
+        
+      } else {
+        
+        radpko_bases_y
+        
+      }
       
-    } else {
+    } else if (input$unit == 'ADM2') {
       
-      radpko_y
+      if (input$timescale) {
+        
+        radpko_adm2_m
+        
+      } else {
+        
+        radpko_adm2_y
+        
+      }
       
     }
     
@@ -139,7 +163,14 @@ server <- function(input, output) {
   ## filter by mission
   filter.mission <- reactive({
     
-    filter.year() %>% filter(mission %in% input$mission)
+    filter.year() %>% st_drop_geometry() %>% filter(mission %in% input$mission)
+    
+  })
+  filter.mission.sf <- reactive({
+    
+    filter.year() %>% filter(mission %in% input$mission) %>% 
+      group_by(id) %>% 
+      slice(1)
     
   })
   
@@ -148,8 +179,7 @@ server <- function(input, output) {
     
     if (!is.null(input$contributors)) {
       
-      contributors_re <- str_c('^', unlist(mget(unlist(input$contributors),
-                                                envir = globalenv())),
+      contributors_re <- str_c('^', unname(unlist(contribs[input$contributors])),
                                collapse = '|')
       
       filter.mission() %>% select(mission:f_unmob,
@@ -176,7 +206,7 @@ server <- function(input, output) {
         
         filter.contributors() %>% select(mission:f_unmob,
                                          matches('^cc|_cc$'),
-                                         any_of(countries),
+                                         any_of(contribs$countries),
                                          matches(str_c(str_c('.*',
                                                              input$personnel, '$'),
                                                        collapse = '|')))
@@ -195,7 +225,7 @@ server <- function(input, output) {
       
       filter.contributors() %>% select(mission:f_unmob,
                                        matches('^cc|_cc$'),
-                                       any_of(countries))
+                                       any_of(contribs$countries))
       
     } else {
       
@@ -224,7 +254,7 @@ server <- function(input, output) {
   
   data.out <- reactive({
     
-    filter.cc() %>% select(any_of(names(radpko_m)))
+    filter.cc() %>% select(any_of(names(radpko_bases_m)))
     
   })
   
@@ -267,10 +297,27 @@ server <- function(input, output) {
     
   })
   
+  output$coverage_plot <- renderPlot({
+    
+    # plot(ssa$geom)
+    # plot(filter.mission.sf()$geometry, add = T, pch = 16, col = '#5b92e5')
+    
+    ssa %>% 
+      st_filter(filter.mission.sf()) %>% 
+      ggplot() +
+      geom_sf() +
+      geom_sf(data = filter.mission.sf(), inherit.aes = F,
+              color = '#5b92e5', fill = '#5b92e5') +
+      theme_bw() +
+      theme(panel.grid = element_blank())
+    
+  })
   
-  output$vars <- renderText(str_c(ncol(data.out()), ' variables'))
-  output$obs <- renderText(str_c(nrow(data.out()), ' observations'))
-  output$variables <- renderTable(names(data.out()) %>% as_tibble())
+  output$vars <- renderText(str_c(format(nrow(data.out()),
+                                         big.mark = ',', scientific = F),
+                                  ' observations; ',
+                                  ncol(data.out()),
+                                  ' variables'))
   
   ## create download handler with appropriate file extension and content function
   output$downloadData <- downloadHandler(
@@ -290,4 +337,4 @@ server <- function(input, output) {
   
 }
 
-shinyApp(ui = ui, server = server)
+shinyApp(ui = ui, server = server, options = list('display.mode' = 'showcase'))
