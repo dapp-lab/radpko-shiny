@@ -3,6 +3,7 @@ library(shinyWidgets)
 library(tidyverse)
 library(lubridate)
 library(sf)
+library(leaflet)
 import::from('data.table', '%between%')
 
 ## load data
@@ -11,8 +12,11 @@ radpko_bases_y <- readRDS('radpko_bases_y.rds')
 radpko_adm2_m <- readRDS('radpko_adm2_m.rds')
 radpko_adm2_y <- readRDS('radpko_adm2_y.rds')
 
-ssa <- readRDS('ssa.Rds')
-
+## reset CRS to deal with older PROJ on shinyapps.io
+st_crs(radpko_bases_m) <- 4326
+st_crs(radpko_bases_y) <- 4326
+st_crs(radpko_adm2_m) <- 4326
+st_crs(radpko_adm2_y) <- 4326
 
 ## define lists for checkboxes
 missions <- as.list(unique(radpko_bases_y$mission))
@@ -24,99 +28,182 @@ contribs$countries <- radpko_bases_y %>%
   names()
 contribs$regions <- c('afr', 'asian', 'west')
 
+## create bounding box for empty leaflet
+bbox_bases <- unname(st_bbox(radpko_bases_y))
+bbox_adm2 <- unname(st_bbox(radpko_adm2_y))
+
 # Define UI for app that draws a histogram ----
 ui <- fluidPage(
   
-  # App title ----
-  titlePanel("Hello Shiny!"),
   
-  # Sidebar layout with input and output definitions ----
-  sidebarLayout(
-    
-    # Sidebar panel for inputs ----
-    sidebarPanel(
-      
-      ## input: spatial unit
-      radioButtons(inputId = 'unit',
-                   label = 'Geographic unit:',
-                   choices = list('Base',
-                                  'ADM2'),
-                   selected = 'Base',
-                   inline = T),
-      
-      ## input: timescale
-      radioButtons(inputId = 'timescale',
-                   label = 'Temporal unit:',
-                   choices = list('Month' = T,
-                                  'Year' = F),
-                   selected = T,
-                   inline = T),
-      
-      ## input: year
-      sliderInput(inputId = 'year',
-                  label = 'Year:',
-                  min = min(radpko_bases_y$year),
-                  max = max(radpko_bases_y$year),
-                  value = range(radpko_bases_y$year),
-                  step = 1,
-                  sep = ''),
-      
-      ## input: checkboxes for mission
-      pickerInput(inputId = 'mission',
-                  label = 'Mission:',
-                  choices = missions,
-                  selected = missions,
-                  multiple = T,
-                  options = list(`actions-box` = T,
-                                 `selected-text-format` = 'count > 3')),
-      
-      ##
-      checkboxInput(inputId = 'cc',
-                    label = 'List contributing countries?',
-                    value = T),
-      
-      ##
-      checkboxInput(inputId = 'country_vars',
-                    label = 'Include country summaries?',
-                    value = T),
-      
-      ## input: contributors
-      checkboxGroupInput(inputId = 'contributors',
-                         label = 'Troop contributors:',
-                         choices = list('Region' = 'regions',
-                                        'Country' = 'countries'),
-                         selected = list('Region' = 'regions',
-                                         'Country' = 'countries')),
-      
-      ## input: personnel type
-      checkboxGroupInput(inputId = 'personnel',
-                         label = 'Personnel type:',
-                         choices = list('Peacekeepers' = '_pko',
-                                        'Troops' = '_untrp',
-                                        'Police' = '_unpol',
-                                        'Observers' = '_unmob'),
-                         selected = c('_pko', '_untrp', '_unpol', '_unmob')),
-      
-      pickerInput(inputId = 'format',
-                  label = 'Download format: ',
-                  choices = list('.csv', '.dta'),
-                  selected = '.csv'),
-      
-      ## download button
-      downloadButton("downloadData", "Download")
-      
-    ),
-    
-    # Main panel for displaying outputs ----
-    mainPanel(
-      
-      # Output: Histogram ----
-      plotOutput(outputId = "distPlot"),
-      plotOutput(outputId = 'coverage_plot'),
-      textOutput('vars')
-      
-    )
-  )
+  
+  fluidRow(
+    column(3,
+           ## input: spatial unit
+           radioButtons(inputId = 'unit',
+                        label = 'Geographic unit:',
+                        choices = list('Base',
+                                       'ADM2'),
+                        selected = 'Base',
+                        inline = T),
+           
+           ## input: timescale
+           radioButtons(inputId = 'timescale',
+                        label = 'Temporal unit:',
+                        choices = list('Month' = T,
+                                       'Year' = F),
+                        selected = T,
+                        inline = T),
+           ## input: year
+           sliderInput(inputId = 'year',
+                       label = 'Year:',
+                       min = min(radpko_bases_y$year),
+                       max = max(radpko_bases_y$year),
+                       value = range(radpko_bases_y$year),
+                       step = 1,
+                       sep = '')
+           ),
+    column(3,
+           ## input: dropdown for mission
+           pickerInput(inputId = 'mission',
+                       label = 'Mission:',
+                       choices = missions,
+                       selected = missions,
+                       multiple = T,
+                       options = list(`actions-box` = T,
+                                      `selected-text-format` = 'count > 3')),
+           ## input: list contributing countries
+           checkboxInput(inputId = 'cc',
+                         label = 'List contributing countries?',
+                         value = T),
+           ## input: include country summaries
+           checkboxInput(inputId = 'country_vars',
+                         label = 'Include country summaries?',
+                         value = T)
+           ),
+    column(3,
+           ## input: contributors
+           checkboxGroupInput(inputId = 'contributors',
+                              label = 'Troop contributors:',
+                              choices = list('Region' = 'regions',
+                                             'Country' = 'countries'),
+                              selected = list('Region' = 'regions',
+                                              'Country' = 'countries')),
+           
+           ## input: personnel type
+           checkboxGroupInput(inputId = 'personnel',
+                              label = 'Personnel type:',
+                              choices = list('Peacekeepers' = '_pko',
+                                             'Troops' = '_untrp',
+                                             'Police' = '_unpol',
+                                             'Observers' = '_unmob'),
+                              selected = c('_pko', '_untrp', '_unpol', '_unmob'))
+           ),
+    column(3,
+           ##input: download type
+           pickerInput(inputId = 'format',
+                       label = 'Download format: ',
+                       choices = list('.csv', '.dta'),
+                       selected = '.csv'),
+           
+           ## download button
+           downloadButton("downloadData", "Download"))
+  ),
+  
+  # Output: leaflet and dimensionality
+  #plotOutput(outputId = 'timeseries_plot'),
+  leafletOutput(outputId = 'leaflet'),
+  textOutput('vars')
+  
+  
+  # 
+  # # Sidebar layout with input and output definitions ----
+  # sidebarLayout(
+  #   
+  #   # Sidebar panel for inputs ----
+  #   sidebarPanel(
+  #     
+  #     ## input: spatial unit
+  #     radioButtons(inputId = 'unit',
+  #                  label = 'Geographic unit:',
+  #                  choices = list('Base',
+  #                                 'ADM2'),
+  #                  selected = 'Base',
+  #                  inline = T),
+  #     
+  #     ## input: timescale
+  #     radioButtons(inputId = 'timescale',
+  #                  label = 'Temporal unit:',
+  #                  choices = list('Month' = T,
+  #                                 'Year' = F),
+  #                  selected = T,
+  #                  inline = T),
+  #     
+  #     ## input: year
+  #     sliderInput(inputId = 'year',
+  #                 label = 'Year:',
+  #                 min = min(radpko_bases_y$year),
+  #                 max = max(radpko_bases_y$year),
+  #                 value = range(radpko_bases_y$year),
+  #                 step = 1,
+  #                 sep = ''),
+  #     
+  #     ## input: dropdown for mission
+  #     pickerInput(inputId = 'mission',
+  #                 label = 'Mission:',
+  #                 choices = missions,
+  #                 selected = missions,
+  #                 multiple = T,
+  #                 options = list(`actions-box` = T,
+  #                                `selected-text-format` = 'count > 3')),
+  #     
+  #     ##
+  #     checkboxInput(inputId = 'cc',
+  #                   label = 'List contributing countries?',
+  #                   value = T),
+  #     
+  #     ##
+  #     checkboxInput(inputId = 'country_vars',
+  #                   label = 'Include country summaries?',
+  #                   value = T),
+  #     
+  #     ## input: contributors
+  #     checkboxGroupInput(inputId = 'contributors',
+  #                        label = 'Troop contributors:',
+  #                        choices = list('Region' = 'regions',
+  #                                       'Country' = 'countries'),
+  #                        selected = list('Region' = 'regions',
+  #                                        'Country' = 'countries')),
+  #     
+  #     ## input: personnel type
+  #     checkboxGroupInput(inputId = 'personnel',
+  #                        label = 'Personnel type:',
+  #                        choices = list('Peacekeepers' = '_pko',
+  #                                       'Troops' = '_untrp',
+  #                                       'Police' = '_unpol',
+  #                                       'Observers' = '_unmob'),
+  #                        selected = c('_pko', '_untrp', '_unpol', '_unmob')),
+  #     
+  #     pickerInput(inputId = 'format',
+  #                 label = 'Download format: ',
+  #                 choices = list('.csv', '.dta'),
+  #                 selected = '.csv'),
+  #     
+  #     ## download button
+  #     downloadButton("downloadData", "Download")
+  #     
+  #   ),
+  #   
+  #   # Main panel for displaying outputs ----
+  #   mainPanel(
+  #     
+  #     # Output: leaflet and dimensionality
+  #     plotOutput(outputId = 'timeseries_plot'),
+  #     leafletOutput(outputId = 'leaflet'),
+  #     textOutput('vars')
+  #     
+  #   )
+  # )
 )
 
 # Define server logic required to draw a histogram ----
@@ -266,7 +353,7 @@ server <- function(input, output) {
   # 1. It is "reactive" and therefore should be automatically
   #    re-executed when inputs (input$bins) change
   # 2. Its output type is a plot
-  output$distPlot <- renderPlot({
+  output$timeseries_plot <- renderPlot({
     
     if (input$timescale) {
       
@@ -287,7 +374,7 @@ server <- function(input, output) {
         summarize(pko_deployed = sum(pko_deployed)) %>% 
         ggplot(aes(x = year, y = pko_deployed, color = mission)) +
         geom_line() +
-        labs(x = '', y = 'Total peacekepers deployed') +
+        labs(x = '', y = 'Total peacekeepers deployed') +
         scale_color_discrete(name = 'Mission') +
         theme_bw() +
         theme(panel.grid = element_blank())
@@ -297,19 +384,42 @@ server <- function(input, output) {
     
   })
   
-  output$coverage_plot <- renderPlot({
+  output$leaflet <- renderLeaflet({
     
-    # plot(ssa$geom)
-    # plot(filter.mission.sf()$geometry, add = T, pch = 16, col = '#5b92e5')
-    
-    ssa %>% 
-      st_filter(filter.mission.sf()) %>% 
-      ggplot() +
-      geom_sf() +
-      geom_sf(data = filter.mission.sf(), inherit.aes = F,
-              color = '#5b92e5', fill = '#5b92e5') +
-      theme_bw() +
-      theme(panel.grid = element_blank())
+    if (input$unit == 'Base') {
+      
+      if (is.null(input$mission)) {
+        
+        leaflet(radpko_bases_y) %>% 
+          addProviderTiles(providers$CartoDB.Positron) %>% 
+          fitBounds(bbox_bases[1], bbox_bases[2], bbox_bases[3], bbox_bases[4])
+        
+      } else {
+        
+        leaflet(filter.mission.sf()) %>% 
+          addProviderTiles(providers$CartoDB.Positron) %>% 
+          addCircleMarkers(radius = 2.5, stroke = F, label = ~id,
+                           fill = T, fillOpacity = 1, fillColor = '#5b92e5')
+        
+      }
+      
+    } else if (input$unit == 'ADM2') {
+      
+      if (is.null(input$mission)) {
+        
+        leaflet(radpko_bases_y) %>% 
+          addProviderTiles(providers$CartoDB.Positron)  %>% 
+          fitBounds(bbox_adm2[1], bbox_adm2[2], bbox_adm2[3], bbox_adm2[4])
+        
+      } else {
+        
+        leaflet(filter.mission.sf()) %>% 
+          addProviderTiles(providers$CartoDB.Positron) %>% 
+          addPolygons(stroke = F, fill = T, label = ~id,
+                      fillOpacity = 1, fillColor = '#5b92e5')
+      }
+      
+    }
     
   })
   
