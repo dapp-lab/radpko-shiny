@@ -398,7 +398,7 @@ server <- function(input, output) {
         
         leaflet(filter.mission.sf()) %>% 
           addProviderTiles(providers$CartoDB.Positron) %>% 
-          addCircleMarkers(radius = 2.5, stroke = F, label = ~id,
+          addCircleMarkers(radius = 2.5, stroke = F, label = ~str_to_title(id),
                            fill = T, fillOpacity = 1, fillColor = '#5b92e5')
         
       }
