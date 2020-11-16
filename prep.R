@@ -1,6 +1,7 @@
 library(tidyverse)
 library(lubridate)
 library(sf)
+library(rmapshaper)
 
 ## function to combine contributing countries in summarize()
 comb.cc <- function(cc) {
@@ -18,35 +19,6 @@ radpko_m <- data.table::fread('radpko_bases_cc.csv') %>%
 radpko_cols <- names(radpko_m)
 radpko_cols[radpko_cols == 'base'] <- 'id'
 
-cshapes <- st_read('~/Dropbox/Datasets/cshapes/cshapes_0.6/cshapes.shp')
-
-ssa_cshapes <- c('Mauritania', 'Mali', 'Niger', 'Chad', 'Sudan', 'Eritrea', 'Senegal',
-                 'The Gambia', 'Guinea-Bissau', 'Guinea', 'Sierra Leone', 'Liberia',
-                 "Cote d'Ivoire", 'Burkina Faso', 'Ghana', 'Togo', 'Benin', 'Nigeria',
-                 'Cameroon', 'Central African Republic', 'South Sudan', 'Ethiopia',
-                 'Somalia', 'Equatorial Guinea', 'Gabon', 'Congo',
-                 'Congo, DRC', 'Uganda', 'Kenya', 'Angola',
-                 'Zambia', 'Rwanda', 'Burundi', 'Tanzania')
-
-
-
-ssa_cshapes[!ssa_cshapes %in% cshapes$CNTRY_NAME]
-
-cshapes %>%
-  filter(CNTRY_NAME %in% ssa_cshapes,
-         GWEYEAR >= min(radpko_m$year),
-         !(CNTRY_NAME == 'Sudan' & GWSYEAR <= min(radpko_m$year))) %>% 
-  saveRDS('app/ssa.Rds')
-
-
-ssa_filter <- cshapes %>%
-  filter(CNTRY_NAME %in% ssa_cshapes,
-         GWEYEAR >= min(radpko_m$year),
-         !(CNTRY_NAME == 'Sudan' & GWSYEAR <= min(radpko_m$year))) %>% 
-  st_geometry() %>% 
-  st_union() %>% 
-  st_as_text()
-
 
 ssa_gadm <- c('Chad', 'Central African Republic', 'Mali',
               'Democratic Republic of the Congo', 'Burundi', 'Sudan',
@@ -63,8 +35,11 @@ gadm_2 <- st_read('~/Dropbox/Datasets/GADM/gadm34_levels_gpkg/gadm34_levels.gpkg
                                 str_c("'", ssa_gadm, "'", collapse = ', '), ')'))
 
 prio <- st_read("~/Dropbox/WashU/Projects/Will's Book/Data/priogrid_cellshp/priogrid_cell.shp",
-                query = 'SELECT gid, geometry FROM priogrid_cell',
+                query = 'SELECT gid, geom FROM priogrid_cell',
                 wkt_filter = gadm_0 %>% st_geometry() %>% st_union() %>% st_as_text())
+
+## simplify spatial objects
+gadm_2 <- ms_simplify(gadm_2, keep = .05, keep_shapes = T)
 
 ## create sf objects
 radpko_m_bases_sf <- radpko_m %>% 
@@ -82,7 +57,7 @@ radpko_m_adm2_sf <- st_join(gadm_2, radpko_m_bases_sf, left = F) %>%
 
 ## create PRIO GRID spatial object
 radpko_m_grid_sf <- st_join(prio, radpko_m_bases_sf %>% select(-gid), left = F) %>% 
-  select(-base)
+  select(-base, -gid)
 
 test <- radpko_m_grid_sf %>% 
   group_by(date, mission, country, gid) %>% 
@@ -92,7 +67,7 @@ test <- radpko_m_grid_sf %>%
 
 ## save monthly data
 radpko_m_bases_sf %>% 
-  select(id = base, any_of(radpko_cols)) %>% 
+  select(id = base, any_of(radpko_cols), -gid) %>% 
   saveRDS('app/radpko_bases_m.rds')
 radpko_m_adm2_sf %>% 
   select(id = NAME_2, any_of(radpko_cols)) %>% 
