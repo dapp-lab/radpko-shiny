@@ -9,14 +9,22 @@ import::from('data.table', '%between%')
 ## load data
 radpko_bases_m <- readRDS('radpko_bases_m.rds')
 radpko_bases_y <- readRDS('radpko_bases_y.rds')
+radpko_adm0_m <- readRDS('radpko_adm0_m.rds')
+radpko_adm0_y <- readRDS('radpko_adm0_y.rds')
 radpko_adm2_m <- readRDS('radpko_adm2_m.rds')
 radpko_adm2_y <- readRDS('radpko_adm2_y.rds')
+radpko_grid_m <- readRDS('radpko_grid_m.rds')
+radpko_grid_y <- readRDS('radpko_grid_y.rds')
 
 ## reset CRS to deal with older PROJ on shinyapps.io
 st_crs(radpko_bases_m) <- 4326
 st_crs(radpko_bases_y) <- 4326
+st_crs(radpko_adm0_m) <- 4326
+st_crs(radpko_adm0_y) <- 4326
 st_crs(radpko_adm2_m) <- 4326
 st_crs(radpko_adm2_y) <- 4326
+st_crs(radpko_grid_m) <- 4326
+st_crs(radpko_grid_y) <- 4326
 
 ## define lists for checkboxes
 missions <- as.list(unique(radpko_bases_y$mission))
@@ -30,20 +38,23 @@ contribs$regions <- c('afr', 'asian', 'west')
 
 ## create bounding box for empty leaflet
 bbox_bases <- unname(st_bbox(radpko_bases_y))
+bbox_adm0 <- unname(st_bbox(radpko_adm0_y))
 bbox_adm2 <- unname(st_bbox(radpko_adm2_y))
+bbox_grid <- unname(st_bbox(radpko_grid_y))
 
 # Define UI for app that draws a histogram ----
 ui <- fluidPage(
   
-  
-  
+  ## input
   fluidRow(
-    column(3,
+    column(5,
            ## input: spatial unit
            radioButtons(inputId = 'unit',
                         label = 'Geographic unit:',
                         choices = list('Base',
-                                       'ADM2'),
+                                       'PRIO-GRID',
+                                       'ADM2',
+                                       'Country'),
                         selected = 'Base',
                         inline = T),
            
@@ -81,7 +92,7 @@ ui <- fluidPage(
                          label = 'Include country summaries?',
                          value = T)
            ),
-    column(3,
+    column(2,
            ## input: contributors
            checkboxGroupInput(inputId = 'contributors',
                               label = 'Troop contributors:',
@@ -99,7 +110,7 @@ ui <- fluidPage(
                                              'Observers' = '_unmob'),
                               selected = c('_pko', '_untrp', '_unpol', '_unmob'))
            ),
-    column(3,
+    column(2,
            ##input: download type
            pickerInput(inputId = 'format',
                        label = 'Download format: ',
@@ -107,109 +118,20 @@ ui <- fluidPage(
                        selected = '.csv'),
            
            ## download button
-           downloadButton("downloadData", "Download"))
+           downloadButton('downloadData', 'Download'))
   ),
   
-  # Output: leaflet and dimensionality
+  ## output
   #plotOutput(outputId = 'timeseries_plot'),
   leafletOutput(outputId = 'leaflet'),
   textOutput('vars')
   
-  
-  # 
-  # # Sidebar layout with input and output definitions ----
-  # sidebarLayout(
-  #   
-  #   # Sidebar panel for inputs ----
-  #   sidebarPanel(
-  #     
-  #     ## input: spatial unit
-  #     radioButtons(inputId = 'unit',
-  #                  label = 'Geographic unit:',
-  #                  choices = list('Base',
-  #                                 'ADM2'),
-  #                  selected = 'Base',
-  #                  inline = T),
-  #     
-  #     ## input: timescale
-  #     radioButtons(inputId = 'timescale',
-  #                  label = 'Temporal unit:',
-  #                  choices = list('Month' = T,
-  #                                 'Year' = F),
-  #                  selected = T,
-  #                  inline = T),
-  #     
-  #     ## input: year
-  #     sliderInput(inputId = 'year',
-  #                 label = 'Year:',
-  #                 min = min(radpko_bases_y$year),
-  #                 max = max(radpko_bases_y$year),
-  #                 value = range(radpko_bases_y$year),
-  #                 step = 1,
-  #                 sep = ''),
-  #     
-  #     ## input: dropdown for mission
-  #     pickerInput(inputId = 'mission',
-  #                 label = 'Mission:',
-  #                 choices = missions,
-  #                 selected = missions,
-  #                 multiple = T,
-  #                 options = list(`actions-box` = T,
-  #                                `selected-text-format` = 'count > 3')),
-  #     
-  #     ##
-  #     checkboxInput(inputId = 'cc',
-  #                   label = 'List contributing countries?',
-  #                   value = T),
-  #     
-  #     ##
-  #     checkboxInput(inputId = 'country_vars',
-  #                   label = 'Include country summaries?',
-  #                   value = T),
-  #     
-  #     ## input: contributors
-  #     checkboxGroupInput(inputId = 'contributors',
-  #                        label = 'Troop contributors:',
-  #                        choices = list('Region' = 'regions',
-  #                                       'Country' = 'countries'),
-  #                        selected = list('Region' = 'regions',
-  #                                        'Country' = 'countries')),
-  #     
-  #     ## input: personnel type
-  #     checkboxGroupInput(inputId = 'personnel',
-  #                        label = 'Personnel type:',
-  #                        choices = list('Peacekeepers' = '_pko',
-  #                                       'Troops' = '_untrp',
-  #                                       'Police' = '_unpol',
-  #                                       'Observers' = '_unmob'),
-  #                        selected = c('_pko', '_untrp', '_unpol', '_unmob')),
-  #     
-  #     pickerInput(inputId = 'format',
-  #                 label = 'Download format: ',
-  #                 choices = list('.csv', '.dta'),
-  #                 selected = '.csv'),
-  #     
-  #     ## download button
-  #     downloadButton("downloadData", "Download")
-  #     
-  #   ),
-  #   
-  #   # Main panel for displaying outputs ----
-  #   mainPanel(
-  #     
-  #     # Output: leaflet and dimensionality
-  #     plotOutput(outputId = 'timeseries_plot'),
-  #     leafletOutput(outputId = 'leaflet'),
-  #     textOutput('vars')
-  #     
-  #   )
-  # )
 )
 
 # Define server logic required to draw a histogram ----
 server <- function(input, output) {
   
-  ## select yearly or monthly data
+  ## select temporal and geographic unit
   timescale <- reactive({
     
     if (input$unit == 'Base') {
@@ -224,6 +146,18 @@ server <- function(input, output) {
         
       }
       
+    } else if (input$unit == 'PRIO-GRID') {
+      
+      if (input$timescale) {
+        
+        radpko_grid_m
+        
+      } else {
+        
+        radpko_grid_y
+        
+      }
+      
     } else if (input$unit == 'ADM2') {
       
       if (input$timescale) {
@@ -233,6 +167,18 @@ server <- function(input, output) {
       } else {
         
         radpko_adm2_y
+        
+      }
+      
+    } else if (input$unit == 'Country') {
+      
+      if (input$timescale) {
+        
+        radpko_adm0_m
+        
+      } else {
+        
+        radpko_adm0_y
         
       }
       
@@ -250,18 +196,31 @@ server <- function(input, output) {
   ## filter by mission
   filter.mission <- reactive({
     
-    filter.year() %>% st_drop_geometry() %>% filter(mission %in% input$mission)
+    if (is.null(input$mission)) {
+      
+      filter.year() %>% slice(0)
+      
+    } else {
+      
+      filter.year() %>%
+        st_drop_geometry() %>%
+        filter(str_detect(mission,
+                          str_c(input$mission, collapse = '|')))
+      
+    }
     
   })
   filter.mission.sf <- reactive({
     
-    filter.year() %>% filter(mission %in% input$mission) %>% 
+    filter.year() %>%
+      filter(str_detect(mission,
+                        str_c(input$mission, collapse = '|'))) %>% 
       group_by(id) %>% 
       slice(1)
     
   })
   
-  ## 
+  ## filter by country and region contributors
   filter.contributors <- reactive({
     
     if (!is.null(input$contributors)) {
@@ -269,13 +228,13 @@ server <- function(input, output) {
       contributors_re <- str_c('^', unname(unlist(contribs[input$contributors])),
                                collapse = '|')
       
-      filter.mission() %>% select(mission:f_unmob,
+      filter.mission() %>% select(id:f_unmob,
                                   matches('^cc|_cc$'),
                                   matches(contributors_re))
       
     } else {
       
-      filter.mission() %>% select(mission:f_unmob,
+      filter.mission() %>% select(id:f_unmob,
                                   matches('^cc|_cc$'))
       
     }
@@ -291,7 +250,7 @@ server <- function(input, output) {
       ## include country variables
       if (input$country_vars) {
         
-        filter.contributors() %>% select(mission:f_unmob,
+        filter.contributors() %>% select(id:f_unmob,
                                          matches('^cc|_cc$'),
                                          any_of(contribs$countries),
                                          matches(str_c(str_c('.*',
@@ -300,7 +259,7 @@ server <- function(input, output) {
         
       } else { # exclude country variables
         
-        filter.contributors() %>% select(mission:f_unmob,
+        filter.contributors() %>% select(id:f_unmob,
                                          matches('^cc|_cc$'),
                                          matches(str_c(str_c('.*',
                                                              input$personnel, '$'),
@@ -310,13 +269,13 @@ server <- function(input, output) {
       
     } else if (input$country_vars) {
       
-      filter.contributors() %>% select(mission:f_unmob,
+      filter.contributors() %>% select(id:f_unmob,
                                        matches('^cc|_cc$'),
                                        any_of(contribs$countries))
       
     } else {
       
-      filter.contributors() %>% select(mission:f_unmob,
+      filter.contributors() %>% select(id:f_unmob,
                                        matches('^cc|_cc$'))
       
     }
@@ -339,20 +298,14 @@ server <- function(input, output) {
     
   })
   
+  ## re-order columns to initial order
   data.out <- reactive({
     
     filter.cc() %>% select(any_of(names(radpko_bases_m)))
     
   })
   
-  # Histogram of the Old Faithful Geyser Data ----
-  # with requested number of bins
-  # This expression that generates a histogram is wrapped in a call
-  # to renderPlot to indicate that:
-  #
-  # 1. It is "reactive" and therefore should be automatically
-  #    re-executed when inputs (input$bins) change
-  # 2. Its output type is a plot
+  ## output time series plot
   output$timeseries_plot <- renderPlot({
     
     if (input$timescale) {
@@ -384,6 +337,7 @@ server <- function(input, output) {
     
   })
   
+  ## output leaflet
   output$leaflet <- renderLeaflet({
     
     if (input$unit == 'Base') {
@@ -403,11 +357,28 @@ server <- function(input, output) {
         
       }
       
+    } else if (input$unit == 'PRIO-GRID') {
+      
+      if (is.null(input$mission)) {
+        
+        leaflet(radpko_grid_y) %>% 
+          addProviderTiles(providers$CartoDB.Positron)  %>% 
+          fitBounds(bbox_grid[1], bbox_grid[2], bbox_grid[3], bbox_grid[4])
+        
+      } else {
+        
+        leaflet(filter.mission.sf()) %>% 
+          addProviderTiles(providers$CartoDB.Positron) %>% 
+          addPolygons(stroke = F, fill = T, label = ~id,
+                      fillOpacity = 1, fillColor = '#5b92e5',
+                      smoothFactor = .75)
+      }
+      
     } else if (input$unit == 'ADM2') {
       
       if (is.null(input$mission)) {
         
-        leaflet(radpko_bases_y) %>% 
+        leaflet(radpko_adm2_y) %>% 
           addProviderTiles(providers$CartoDB.Positron)  %>% 
           fitBounds(bbox_adm2[1], bbox_adm2[2], bbox_adm2[3], bbox_adm2[4])
         
@@ -416,13 +387,32 @@ server <- function(input, output) {
         leaflet(filter.mission.sf()) %>% 
           addProviderTiles(providers$CartoDB.Positron) %>% 
           addPolygons(stroke = F, fill = T, label = ~id,
-                      fillOpacity = 1, fillColor = '#5b92e5')
+                      fillOpacity = 1, fillColor = '#5b92e5',
+                      smoothFactor = .25)
       }
       
-    }
+    } else if (input$unit == 'Country') {
+      
+      if (is.null(input$mission)) {
+        
+        leaflet(radpko_adm0_y) %>% 
+          addProviderTiles(providers$CartoDB.Positron)  %>% 
+          fitBounds(bbox_adm0[1], bbox_adm0[2], bbox_adm0[3], bbox_adm0[4])
+        
+      } else {
+        
+        leaflet(filter.mission.sf()) %>% 
+          addProviderTiles(providers$CartoDB.Positron) %>% 
+          addPolygons(stroke = F, fill = T, label = ~id,
+                      fillOpacity = 1, fillColor = '#5b92e5',
+                      smoothFactor = .25)
+      }
+      
+    } 
     
   })
   
+  ## output data dimensionality
   output$vars <- renderText(str_c(format(nrow(data.out()),
                                          big.mark = ',', scientific = F),
                                   ' observations; ',
