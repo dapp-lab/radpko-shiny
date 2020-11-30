@@ -67,10 +67,11 @@ radpko_m_adm2_sf <- st_join(gadm_2, radpko_m_bases_sf, left = F) %>%
   select(-base, -gid)
 
 ## create PRIO GRID spatial object
-radpko_m_grid_sf <- radpko_m %>% 
+radpko_m_grid_sf <- st_join(prio, radpko_m_bases_sf %>% select(-gid), left = F) %>%
+  st_drop_geometry() %>% 
   group_by(gid, date, year) %>% 
   summarize(across(c(everything(), -matches('^cc|_cc$'),
-                     -mission, -country, -base, -latitude, -longitude),
+                     -mission, -country, -base),
                    sum, na.rm = T),
             across(c(matches('^cc|_cc$'), mission, country), comb.cc),
             .groups = 'drop') %>% 

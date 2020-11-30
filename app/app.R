@@ -29,12 +29,15 @@ st_crs(radpko_grid_y) <- 4326
 ## define lists for checkboxes
 missions <- as.list(unique(radpko_bases_y$mission))
 names(missions) <- unique(radpko_bases_y$mission)
-contribs <- list()
-contribs$countries <- radpko_bases_y %>%
+contribs <- radpko_bases_y %>%
+  st_drop_geometry() %>% 
   select(albania:zambia) %>% 
   select(!matches('_')) %>%
   names()
-contribs$regions <- c('afr', 'asian', 'west')
+
+contribs <- setNames(as.list(c('afr', 'asian', 'west', contribs)),
+                     str_to_title(c('African', 'Asian', 'Western', contribs)))
+
 
 ## create bounding box for empty leaflet
 bbox_bases <- unname(st_bbox(radpko_bases_y))
@@ -83,34 +86,30 @@ ui <- fluidPage(
                        multiple = T,
                        options = list(`actions-box` = T,
                                       `selected-text-format` = 'count > 3')),
-           ## input: list contributing countries
-           checkboxInput(inputId = 'cc',
-                         label = 'List contributing countries?',
-                         value = T),
-           ## input: include country summaries
-           checkboxInput(inputId = 'country_vars',
-                         label = 'Include country summaries?',
-                         value = T)
-           ),
-    column(2,
            ## input: contributors
-           checkboxGroupInput(inputId = 'contributors',
-                              label = 'Troop contributors:',
-                              choices = list('Region' = 'regions',
-                                             'Country' = 'countries'),
-                              selected = list('Region' = 'regions',
-                                              'Country' = 'countries')),
-           
+           pickerInput(inputId = 'contributors',
+                       label = 'Troop contributors:',
+                       choices = contribs,
+                       selected = contribs,
+                       multiple = T,
+                       options = list(`actions-box` = T,
+                                      `selected-text-format` = 'count > 3')),
            ## input: personnel type
-           checkboxGroupInput(inputId = 'personnel',
-                              label = 'Personnel type:',
-                              choices = list('Peacekeepers' = '_pko',
-                                             'Troops' = '_untrp',
-                                             'Police' = '_unpol',
-                                             'Observers' = '_unmob'),
-                              selected = c('_pko', '_untrp', '_unpol', '_unmob'))
+           pickerInput(inputId = 'personnel',
+                       label = 'Personnel type:',
+                       choices = list('Peacekeepers' = '_pko',
+                                      'Troops' = '_untrp',
+                                      'Police' = '_unpol',
+                                      'Observers' = '_unmob'),
+                       selected = list('Peacekeepers' = '_pko',
+                                       'Troops' = '_untrp',
+                                       'Police' = '_unpol',
+                                       'Observers' = '_unmob'),
+                       multiple = T,
+                       options = list(`actions-box` = T,
+                                      `selected-text-format` = 'count > 3'))
            ),
-    column(2,
+    column(4,
            ##input: download type
            pickerInput(inputId = 'format',
                        label = 'Download format: ',
@@ -213,8 +212,7 @@ server <- function(input, output) {
   filter.mission.sf <- reactive({
     
     filter.year() %>%
-      filter(str_detect(mission,
-                        str_c(input$mission, collapse = '|'))) %>% 
+      filter(str_detect(mission, str_c(input$mission, collapse = '|'))) %>% 
       group_by(id) %>% 
       slice(1)
     
@@ -223,19 +221,46 @@ server <- function(input, output) {
   ## filter by country and region contributors
   filter.contributors <- reactive({
     
-    if (!is.null(input$contributors)) {
+    if (is.null(input$contributors)) {
       
-      contributors_re <- str_c('^', unname(unlist(contribs[input$contributors])),
-                               collapse = '|')
-      
-      filter.mission() %>% select(id:f_unmob,
-                                  matches('^cc|_cc$'),
-                                  matches(contributors_re))
+      filter.mission()
       
     } else {
       
-      filter.mission() %>% select(id:f_unmob,
-                                  matches('^cc|_cc$'))
+      contributors_re <- str_c('^', input$contributors,
+                               collapse = '|')
+      
+      ## get maximum value in each contributor column by row
+      contributors_filter <- filter.mission() %>%
+        select(matches(contributors_re), -matches('^cc|_cc$')) %>% 
+        apply(1, max, na.rm = T)
+      
+      filter.mission()[contributors_filter > 0, ] %>%
+        select(id:f_unmob,
+               matches('^cc|_cc$'),
+               matches(contributors_re))
+      
+    }
+    
+  })
+  filter.contributors.sf <- reactive({
+    
+    if (is.null(input$contributors)) {
+      
+      filter.mission.sf()
+      
+    } else {
+      
+      contributors_re <- str_c('^', input$contributors,
+                               collapse = '|')
+      
+      ## get maximum value in each contributor column by row
+      contributors_sf_filter <- filter.mission.sf() %>%
+        select(matches(contributors_re), -matches('^cc|_cc$')) %>% 
+        st_drop_geometry() %>% 
+        apply(1, max, na.rm = T)
+      
+      filter.mission.sf()[contributors_sf_filter > 0, ]
       
     }
     
@@ -245,54 +270,48 @@ server <- function(input, output) {
   filter.personnel <- reactive({
     
     ## limit to selected personnel
-    if (!is.null(input$personnel)) {
-      
-      ## include country variables
-      if (input$country_vars) {
-        
-        filter.contributors() %>% select(id:f_unmob,
-                                         matches('^cc|_cc$'),
-                                         any_of(contribs$countries),
-                                         matches(str_c(str_c('.*',
-                                                             input$personnel, '$'),
-                                                       collapse = '|')))
-        
-      } else { # exclude country variables
-        
-        filter.contributors() %>% select(id:f_unmob,
-                                         matches('^cc|_cc$'),
-                                         matches(str_c(str_c('.*',
-                                                             input$personnel, '$'),
-                                                       collapse = '|')))
-        
-      }
-      
-    } else if (input$country_vars) {
+    if (is.null(input$personnel)) {
       
       filter.contributors() %>% select(id:f_unmob,
                                        matches('^cc|_cc$'),
-                                       any_of(contribs$countries))
-      
+                                       any_of(unlist(contribs, use.names = F)))
+
     } else {
       
-      filter.contributors() %>% select(id:f_unmob,
-                                       matches('^cc|_cc$'))
+      personnel_filter <- filter.contributors() %>%
+        select(matches(str_c(str_c('.*', input$personnel, '$'),
+                             collapse = '|'))) %>% 
+        apply(1, max, na.rm = T)
+      
+      filter.contributors()[personnel_filter > 0, ] %>%
+        select(id:f_unmob,
+               matches('^cc|_cc$'),
+               any_of(unlist(contribs, use.names = F)),
+               matches(str_c(str_c('.*',
+                                   input$personnel, '$'),
+                             collapse = '|')))
       
     }
     
   })
-  
-  ## include contributing countries?
-  filter.cc <- reactive({
+  filter.personnel.sf <- reactive({
     
-    if (input$cc) {
+    ## limit to selected personnel
+    if (is.null(input$personnel)) {
       
-      filter.personnel()
+      filter.contributors.sf() %>% select(id:f_unmob,
+                                       matches('^cc|_cc$'),
+                                       any_of(unlist(contribs, use.names = F)))
       
     } else {
       
-      filter.personnel() %>% 
-        select(-matches('^cc|_cc$'))
+      personnel_filter <- filter.contributors.sf() %>%
+        select(matches(str_c(str_c('.*', input$personnel, '$'),
+                             collapse = '|'))) %>% 
+        st_drop_geometry() %>% 
+        apply(1, max, na.rm = T)
+      
+      filter.contributors.sf()[personnel_filter > 0, ]
       
     }
     
@@ -301,39 +320,7 @@ server <- function(input, output) {
   ## re-order columns to initial order
   data.out <- reactive({
     
-    filter.cc() %>% select(any_of(names(radpko_bases_m)))
-    
-  })
-  
-  ## output time series plot
-  output$timeseries_plot <- renderPlot({
-    
-    if (input$timescale) {
-      
-      filter.mission() %>% 
-        group_by(date, mission) %>%
-        summarize(pko_deployed = sum(pko_deployed)) %>% 
-        ggplot(aes(x = date, y = pko_deployed, color = mission)) +
-        geom_line() +
-        labs(x = '', y = 'Total peacekepers deployed') +
-        scale_color_discrete(name = 'Mission') +
-        theme_bw() +
-        theme(panel.grid = element_blank())
-      
-    } else {
-      
-      filter.mission() %>% 
-        group_by(year, mission) %>%
-        summarize(pko_deployed = sum(pko_deployed)) %>% 
-        ggplot(aes(x = year, y = pko_deployed, color = mission)) +
-        geom_line() +
-        labs(x = '', y = 'Total peacekeepers deployed') +
-        scale_color_discrete(name = 'Mission') +
-        theme_bw() +
-        theme(panel.grid = element_blank())
-      
-    }
-    
+    filter.personnel() %>% select(any_of(names(radpko_bases_m)))
     
   })
   
@@ -350,7 +337,7 @@ server <- function(input, output) {
         
       } else {
         
-        leaflet(filter.mission.sf()) %>% 
+        leaflet(filter.personnel.sf()) %>% 
           addProviderTiles(providers$CartoDB.Positron) %>% 
           addCircleMarkers(radius = 2.5, stroke = F, label = ~str_to_title(id),
                            fill = T, fillOpacity = 1, fillColor = '#5b92e5')
@@ -367,7 +354,7 @@ server <- function(input, output) {
         
       } else {
         
-        leaflet(filter.mission.sf()) %>% 
+        leaflet(filter.personnel.sf()) %>% 
           addProviderTiles(providers$CartoDB.Positron) %>% 
           addPolygons(stroke = F, fill = T, label = ~id,
                       fillOpacity = 1, fillColor = '#5b92e5',
@@ -384,7 +371,7 @@ server <- function(input, output) {
         
       } else {
         
-        leaflet(filter.mission.sf()) %>% 
+        leaflet(filter.personnel.sf()) %>% 
           addProviderTiles(providers$CartoDB.Positron) %>% 
           addPolygons(stroke = F, fill = T, label = ~id,
                       fillOpacity = 1, fillColor = '#5b92e5',
@@ -401,7 +388,7 @@ server <- function(input, output) {
         
       } else {
         
-        leaflet(filter.mission.sf()) %>% 
+        leaflet(filter.personnel.sf()) %>% 
           addProviderTiles(providers$CartoDB.Positron) %>% 
           addPolygons(stroke = F, fill = T, label = ~id,
                       fillOpacity = 1, fillColor = '#5b92e5',
