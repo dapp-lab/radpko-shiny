@@ -1,6 +1,7 @@
 library(shiny)
 library(shinyWidgets)
 library(tidyverse)
+library(ggthemes)
 library(lubridate)
 library(sf)
 library(leaflet)
@@ -45,9 +46,8 @@ bbox_adm0 <- unname(st_bbox(radpko_adm0_y))
 bbox_adm2 <- unname(st_bbox(radpko_adm2_y))
 bbox_grid <- unname(st_bbox(radpko_grid_y))
 
-# Define UI for app that draws a histogram ----
+## define UI
 ui <- fluidPage(
-  
   ## input
   fluidRow(
     column(5,
@@ -76,7 +76,7 @@ ui <- fluidPage(
                        value = range(radpko_bases_y$year),
                        step = 1,
                        sep = '')
-           ),
+    ),
     column(3,
            ## input: dropdown for mission
            pickerInput(inputId = 'mission',
@@ -97,18 +97,18 @@ ui <- fluidPage(
            ## input: personnel type
            pickerInput(inputId = 'personnel',
                        label = 'Personnel type:',
-                       choices = list('Peacekeepers' = '_pko',
-                                      'Troops' = '_untrp',
-                                      'Police' = '_unpol',
-                                      'Observers' = '_unmob'),
-                       selected = list('Peacekeepers' = '_pko',
-                                       'Troops' = '_untrp',
-                                       'Police' = '_unpol',
-                                       'Observers' = '_unmob'),
+                       choices = list('Total peacekeepers' = 'pko',
+                                      'Troops' = 'untrp',
+                                      'Police' = 'unpol',
+                                      'Observers' = 'unmob'),
+                       selected = list('Total peacekeepers' = 'pko',
+                                       'Troops' = 'untrp',
+                                       'Police' = 'unpol',
+                                       'Observers' = 'unmob'),
                        multiple = T,
                        options = list(`actions-box` = T,
                                       `selected-text-format` = 'count > 3'))
-           ),
+    ),
     column(4,
            ##input: download type
            pickerInput(inputId = 'format',
@@ -119,12 +119,20 @@ ui <- fluidPage(
            ## download button
            downloadButton('downloadData', 'Download'))
   ),
-  
-  ## output
-  #plotOutput(outputId = 'timeseries_plot'),
-  leafletOutput(outputId = 'leaflet'),
-  textOutput('vars')
-  
+  tabsetPanel(
+    id = 'tabs',
+    selected = 'map',
+    tabPanel('Map', value = 'map',
+             leafletOutput(outputId = 'leaflet'),
+             textOutput('vars')
+    ),
+    tabPanel('Histogram', value = 'hist',
+             plotOutput(outputId = 'histogram_plot')),
+    tabPanel('Timeseries', value = 'ts',
+             plotOutput(outputId = 'timeseries_plot')),
+    tabPanel('Code', value = 'code',
+             'test text')
+  )
 )
 
 # Define server logic required to draw a histogram ----
@@ -133,7 +141,59 @@ server <- function(input, output) {
   ## select temporal and geographic unit
   timescale <- reactive({
     
-    if (input$unit == 'Base') {
+    if (input$tabs == 'map') {
+      
+      if (input$unit == 'Base') {
+        
+        if (input$timescale) {
+          
+          radpko_bases_m
+          
+        } else {
+          
+          radpko_bases_y
+          
+        }
+        
+      } else if (input$unit == 'PRIO-GRID') {
+        
+        if (input$timescale) {
+          
+          radpko_grid_m
+          
+        } else {
+          
+          radpko_grid_y
+          
+        }
+        
+      } else if (input$unit == 'ADM2') {
+        
+        if (input$timescale) {
+          
+          radpko_adm2_m
+          
+        } else {
+          
+          radpko_adm2_y
+          
+        }
+        
+      } else if (input$unit == 'Country') {
+        
+        if (input$timescale) {
+          
+          radpko_adm0_m
+          
+        } else {
+          
+          radpko_adm0_y
+          
+        }
+        
+      }
+      
+    } else if (input$tabs == 'hist' | input$tabs == 'ts') {
       
       if (input$timescale) {
         
@@ -142,42 +202,6 @@ server <- function(input, output) {
       } else {
         
         radpko_bases_y
-        
-      }
-      
-    } else if (input$unit == 'PRIO-GRID') {
-      
-      if (input$timescale) {
-        
-        radpko_grid_m
-        
-      } else {
-        
-        radpko_grid_y
-        
-      }
-      
-    } else if (input$unit == 'ADM2') {
-      
-      if (input$timescale) {
-        
-        radpko_adm2_m
-        
-      } else {
-        
-        radpko_adm2_y
-        
-      }
-      
-    } else if (input$unit == 'Country') {
-      
-      if (input$timescale) {
-        
-        radpko_adm0_m
-        
-      } else {
-        
-        radpko_adm0_y
         
       }
       
@@ -337,7 +361,8 @@ server <- function(input, output) {
         
       } else {
         
-        leaflet(filter.personnel.sf()) %>% 
+        filter.personnel.sf() %>% 
+          leaflet() %>% 
           addProviderTiles(providers$CartoDB.Positron) %>% 
           addCircleMarkers(radius = 2.5, stroke = F, label = ~str_to_title(id),
                            fill = T, fillOpacity = 1, fillColor = '#5b92e5')
@@ -354,7 +379,8 @@ server <- function(input, output) {
         
       } else {
         
-        leaflet(filter.personnel.sf()) %>% 
+        filter.personnel.sf() %>% 
+          leaflet() %>% 
           addProviderTiles(providers$CartoDB.Positron) %>% 
           addPolygons(stroke = F, fill = T, label = ~id,
                       fillOpacity = 1, fillColor = '#5b92e5',
@@ -371,7 +397,8 @@ server <- function(input, output) {
         
       } else {
         
-        leaflet(filter.personnel.sf()) %>% 
+        filter.personnel.sf() %>% 
+          leaflet() %>% 
           addProviderTiles(providers$CartoDB.Positron) %>% 
           addPolygons(stroke = F, fill = T, label = ~id,
                       fillOpacity = 1, fillColor = '#5b92e5',
@@ -388,7 +415,8 @@ server <- function(input, output) {
         
       } else {
         
-        leaflet(filter.personnel.sf()) %>% 
+        filter.personnel.sf() %>% 
+          leaflet() %>% 
           addProviderTiles(providers$CartoDB.Positron) %>% 
           addPolygons(stroke = F, fill = T, label = ~id,
                       fillOpacity = 1, fillColor = '#5b92e5',
@@ -398,6 +426,54 @@ server <- function(input, output) {
     } 
     
   })
+  
+  ## output time series plot
+  output$timeseries_plot <- renderPlot(
+    filter.personnel() %>%
+      select(any_of(names(radpko_bases_m))) %>% # return to original order
+      group_by(mission, date) %>% 
+      summarize(across(c(pko_deployed, mltipko_deployed, untrp:west_unmob), mean),
+                .groups = 'drop') %>% 
+      ggplot(aes(x = date, y = pko_deployed, color = mission)) +
+      labs(x = 'Date', y = 'Count') +
+      geom_line() +
+      scale_color_manual(name = 'Mission',
+                         breaks = unname(unlist(missions)),
+                         values = colorRampPalette(colorblind_pal()(8))(length(missions))) +
+      theme_bw() +
+      theme(panel.grid = element_blank(),
+            panel.border = element_blank())
+  )
+  
+  ## output histogram plot
+  output$histogram_plot <- renderPlot(
+    filter.personnel() %>%
+      select(any_of(names(radpko_bases_m))) %>% # return to original order
+      group_by(mission) %>% 
+      summarize(across(any_of(ifelse(input$personnel == 'pko', 'pko_deployed', input$personnel)), mean),
+                .groups = 'drop_last') %>%
+      pivot_longer(-mission) %>% 
+      mutate(name = factor(name, levels = c('pko_deployed', 'untrp', 'unpol', 'unmob'))) %>% 
+      ggplot(aes(x = name, y = value, color = name, fill = name)) +
+      geom_bar(stat = 'identity') +
+      facet_wrap(~ mission, scales = 'free_y') +
+      labs(x = str_c('Average', ifelse(input$timescale, 'monthly', 'yearly'),
+                     'personnel deployment', sep = ' '), y = 'Count') +
+      scale_color_manual(breaks = c('pko_deployed', 'untrp', 'unpol', 'unmob'),
+                         labels = c('Total peacekeepers', 'Troops', 'Police', 'Observers'),
+                         values = colorblind_pal()(4),
+                         name = '') +
+      scale_fill_manual(breaks = c('pko_deployed', 'untrp', 'unpol', 'unmob'),
+                        labels = c('Total peacekeepers', 'Troops', 'Police', 'Observers'),
+                        values = colorblind_pal()(4),
+                        name = '') +
+      theme_bw() +
+      theme(axis.text.x = element_blank(), axis.ticks = element_blank(),
+            legend.position = 'bottom', panel.grid = element_blank(),
+            panel.border = element_blank()) +
+      guides(colour = guide_legend(nrow = 1))
+  )
+  
   
   ## output data dimensionality
   output$vars <- renderText(str_c(format(nrow(data.out()),
@@ -424,4 +500,4 @@ server <- function(input, output) {
   
 }
 
-shinyApp(ui = ui, server = server, options = list('display.mode' = 'showcase'))
+shinyApp(ui = ui, server = server, options = list('display.mode' = 'normal'))

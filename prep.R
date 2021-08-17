@@ -14,7 +14,7 @@ comb.cc <- function(cc) {
 ## read in bas data
 radpko_m <- data.table::fread('radpko_bases_cc.csv') %>% 
   as_tibble() %>% 
-  mutate(year = year(date)) %>% 
+  mutate(year = year(date), date = ymd(date)) %>% 
   select(mission:date, year, everything())
 
 radpko_cols <- names(radpko_m)
