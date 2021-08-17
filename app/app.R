@@ -130,8 +130,15 @@ ui <- fluidPage(
              plotOutput(outputId = 'histogram_plot')),
     tabPanel('Timeseries', value = 'ts',
              plotOutput(outputId = 'timeseries_plot')),
+    tabPanel('Data Preview', value = 'df',
+             dataTableOutput('df')),
     tabPanel('Code', value = 'code',
-             'test text')
+             p('This ',
+               a('GitHub repository',
+                 href = 'https://github.com/jayrobwilliams/radpko-shiny',
+                 target = '_blank', rel = 'noreferrer noopener'),
+               'contains the code that runs this interface, as well as',
+               'instructions on how to run it locally.'))
   )
 )
 
@@ -193,7 +200,7 @@ server <- function(input, output) {
         
       }
       
-    } else if (input$tabs == 'hist' | input$tabs == 'ts') {
+    } else if (input$tabs == 'hist' | input$tabs == 'ts' | input$tabs == 'df' | input$tabs == 'code') {
       
       if (input$timescale) {
         
@@ -481,6 +488,17 @@ server <- function(input, output) {
                                   ' observations; ',
                                   ncol(data.out()),
                                   ' variables'))
+  
+  ## data output preview
+  output$df <- renderDataTable(data.out() %>%
+                                 select(ID = id,
+                                        Mission = mission,
+                                        Country = country,
+                                        Date = date,
+                                        Personnel = pko_deployed,
+                                        Contributors = contributing_countries) %>% 
+                                 mutate(ID = str_to_title(ID)),
+                               options = list(pageLength = 10))
   
   ## create download handler with appropriate file extension and content function
   output$downloadData <- downloadHandler(
